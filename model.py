@@ -191,11 +191,25 @@ class GPT(nn.Module):
     def count_params(self):
         return sum(p.numel() for p in self.parameters())
 
-    def forward_repr(self, idx):
-        x = self.transformer['embedding'](idx)  # [B, T, n_embed]
-        x = self.transformer['blocks'](x)       # [B, T, n_embed]
-        x = self.transformer['ln_f'](x)         # [B, T, n_embed]
+    def forward_repr_post_lnf(self, idx):
+      x = self.forward_repr_pre_lnf(idx)     # [B, T, n_embed]
+      return self.transformer['ln_f'](x)
+
+    def forward_repr_pre_lnf(self, idx):
+      x = self.transformer['embedding'](idx)
+      return self.transformer['blocks'](x)
+
+    def forward_repr_at_site(self, site, idx):
+      if site == 'final_post_lnf':
+        return self.forward_repr_post_lnf(idx)
+      if site == 'final_pre_lnf':
+        return self.forward_repr_pre_lnf(idx)
+      if site.startswith('block'):
+        i = int(site[5:])
+        x = self.transformer['embedding'](idx)
+        x = self.transformer['blocks'][:i](x)
         return x
+      raise ValueError(site)
     
     def forward(self, idx, targets=None):
         B, T = idx.shape
@@ -203,7 +217,7 @@ class GPT(nn.Module):
             f"Sequence length {T} exceeds block_size {self.block_size}"
         
         # Embedding
-        x = self.forward_repr(idx)  # [B, T, n_embed]
+        x = self.forward_repr_post_lnf(idx)  # [B, T, n_embed]
 
         # Project to vocabulary
         logits = self.lm_head(x)                # [B, T, vocab_size]
